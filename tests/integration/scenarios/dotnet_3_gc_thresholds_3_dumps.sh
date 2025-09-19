@@ -54,6 +54,8 @@ then
     rm $SOCKETPATH
 fi
 
+cat /var/tmp/procdumpprofiler.log
+
 if [[ "$COUNT" -eq 3 ]]; then
     rm -rf *TestWebApi_*gc_size_*
     popd
