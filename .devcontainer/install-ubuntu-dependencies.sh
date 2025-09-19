@@ -45,12 +45,15 @@ wget https://github.com/debbuild/debbuild/releases/download/22.02.1/debbuild_22.
 
 arch=$(uname -m)
 if [[ "$arch" == "aarch64" ]]; then
-    wget https://dot.net/v1/dotnet-install.sh 
+    wget https://dot.net/v1/dotnet-install.sh
     chmod +x dotnet-install.sh
     ./dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet
 else
     # Not ARM64, we can install dotnet the normal way.
     # install .NET 8 for signing process and integration tests
-    apt install -y dotnet-runtime-8.0
-    apt install -y dotnet-sdk-8.0
+    #apt install -y dotnet-runtime-8.0
+    #apt install -y dotnet-sdk-8.0
+    add-apt-repository ppa:dotnet/backports -y
+    apt update
+    apt-get install -y dotnet-sdk-9.0
 fi
