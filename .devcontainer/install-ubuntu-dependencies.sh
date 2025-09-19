@@ -51,9 +51,5 @@ if [[ "$arch" == "aarch64" ]]; then
 else
     # Not ARM64, we can install dotnet the normal way.
     # install .NET 8 for signing process and integration tests
-    #apt install -y dotnet-runtime-8.0
-    #apt install -y dotnet-sdk-8.0
-    add-apt-repository ppa:dotnet/backports -y
-    apt update
-    apt-get install -y dotnet-sdk-9.0
+    apt install -y dotnet-sdk-6.0
 fi
