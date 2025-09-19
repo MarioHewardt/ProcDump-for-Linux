@@ -54,8 +54,6 @@ then
     rm $SOCKETPATH
 fi
 
-cat /var/tmp/procdumpprofiler.log
-
 if [[ "$COUNT" -eq 3 ]]; then
     rm -rf *TestWebApi_*gc_size_*
     popd
@@ -64,6 +62,7 @@ if [[ "$COUNT" -eq 3 ]]; then
     PROF="$(cat /proc/${TESTCHILDPID}/maps | awk '{print $6}' | grep '\procdumpprofiler.so' | uniq)"
     pkill -9 TestWebApi
     if [[ "$PROF" == "procdumpprofiler.so" ]]; then
+        cat /var/tmp/procdumpprofiler.log
         exit 1
     else
         exit 0
@@ -71,5 +70,6 @@ if [[ "$COUNT" -eq 3 ]]; then
 else
     pkill -9 TestWebApi
     popd
+    cat /var/tmp/procdumpprofiler.log
     exit 1
 fi
