@@ -75,7 +75,7 @@ function waitforprocdumpsocket {
         echo "List of ProcDump sockets:"
         sudo ls /tmp/procdump
         echo "ProcDump .NET status socket not available within alloted time"
-        result=-1
+        result="-1"
         return
       fi
       sleep 1s
