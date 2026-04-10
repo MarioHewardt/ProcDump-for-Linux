@@ -10,7 +10,7 @@
 
 #include <memory>
 
-static const char *CoreDumpTypeStrings[] = { "commit", "cpu", "thread", "filedesc", "signal", "time", "exception", "manual" };
+static const char *CoreDumpTypeStrings[] = { "commit", "cpu", "thread", "filedesc", "signal", "time", "exception", "manual", "perfcounter" };
 
 //--------------------------------------------------------------------
 //

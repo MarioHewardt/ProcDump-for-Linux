@@ -106,6 +106,8 @@ function waitforndumps {
   local dumppattern=$2
   local -n result=$3
 
+  local _old_nullglob=$(shopt -p nullglob)
+  shopt -s nullglob
   for i in {1..30}; do
     files=( $dumppattern )
     result=${#files[@]}
@@ -116,5 +118,6 @@ function waitforndumps {
     echo "[script] Waiting for dump to be written..."
     sleep 1
   done
+  $_old_nullglob
 }
 

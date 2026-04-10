@@ -185,6 +185,7 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
                 ${procdump_SRC}/CoreDumpWriter.cpp
                 ${procdump_SRC}/DotnetHelpers.cpp
                 ${procdump_SRC}/Events.cpp
+                ${procdump_SRC}/EventPipeHelper.cpp
                 ${procdump_SRC}/GenHelpers.cpp
                 ${procdump_SRC}/Handle.cpp
                 ${procdump_SRC}/Logging.cpp
