@@ -1,7 +1,10 @@
 #!/bin/bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/helpers.sh"
+
 function runProcDumpAndValidate {
 	DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
 	PROCDUMPPATH="$DIR/../../procdump";
+	GDBSCRIPT="$DIR/validate_dump.gdb"
 
 	OS=$(uname -s)
 
@@ -61,6 +64,25 @@ function runProcDumpAndValidate {
 		kill -9 $pidPD > /dev/null
 	fi
 
+	# Determine if this is a native (non-.NET) test that expects dumps
+	isNativeTest=false
+	if [[ "$TESTPROGNAME" == "ProcDumpTestApplication" ]] && $SHOULDDUMP; then
+		isNativeTest=true
+	fi
+
+	# Generate gcore reference dump while the test process is still alive
+	gcoreRefDump=""
+	if $isNativeTest && ps -p $pid > /dev/null 2>&1; then
+		gcoreRefDir=$(mktemp -d -t gcoreref_XXXXXX)
+		gcoreRefDump="$gcoreRefDir/refcore.$pid"
+		echo [`date +"%T.%3N"`] Generating gcore reference dump for PID $pid
+		timeout 30 gdb -batch -ex "gcore $gcoreRefDump" -p $pid > /dev/null 2>&1
+		if [ ! -f "$gcoreRefDump" ]; then
+			echo "[validate] WARNING: gcore reference dump was not generated"
+			gcoreRefDump=""
+		fi
+	fi
+
 	if ps -p $pid > /dev/null
 	then
 		echo [`date +"%T.%3N"`] Killing Test Program: $pid
@@ -82,6 +104,34 @@ function runProcDumpAndValidate {
 	# We're checking dump results
 	if find "$dumpDir" -mindepth 1 -print -quit | grep -q .; then
 		if $SHOULDDUMP; then
+			# Dump validation for native (non-.NET) tests
+			if $isNativeTest; then
+				# Find the first dump file
+				corexDump=$(find "$dumpDir" -mindepth 1 -maxdepth 1 -type f ! -name "*.restrack" -print -quit)
+
+				if [ -n "$corexDump" ]; then
+					# 1. Size comparison against gcore reference
+					if [ -n "$gcoreRefDump" ] && [ -f "$gcoreRefDump" ]; then
+						if ! validatedumpsize "$corexDump" "$gcoreRefDump" 20; then
+							echo "[validate] FAIL: dump size validation failed"
+							exit 1
+						fi
+					else
+						echo "[validate] SKIP: no gcore reference dump available for size comparison"
+					fi
+
+					# 2. GDB content validation (marker + shared libs)
+					if [ -f "$GDBSCRIPT" ]; then
+						if ! validatedumpcontent "$corexDump" "$TESTPROGPATH" "$GDBSCRIPT"; then
+							echo "[validate] FAIL: dump content validation failed"
+							exit 1
+						fi
+					else
+						echo "[validate] SKIP: GDB validation script not found"
+					fi
+				fi
+			fi
+
 			exit 0
 		else
 			exit 1

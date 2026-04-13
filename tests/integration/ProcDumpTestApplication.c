@@ -14,6 +14,9 @@
 #define FILE_DESC_COUNT	500
 #define THREAD_COUNT	100
 
+/* Marker for core dump content validation: GDB reads this to confirm the dump is valid */
+volatile int procdump_test_marker = 0xDEADBEEF;
+
 
 void* dFunc(int type)
 {

@@ -142,6 +142,7 @@ struct ProcDumpConfiguration
     bool bLeakReportInProgress;
     int SampleRate;                 // Record every X resource allocation in restrack
     int CoreDumpMask;               // -mc (core dump mask)
+    bool bUseGcore;                 // -usegcore (undocumented: use gcore instead of built-in corex)
 
     // .NET Performance counter triggers
     struct PerfCounterTrigger PerfCounterTriggers[MAX_PERF_COUNTER_TRIGGERS];

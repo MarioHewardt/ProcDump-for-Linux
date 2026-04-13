@@ -191,6 +191,7 @@ void InitProcDumpConfiguration(struct ProcDumpConfiguration *self)
     self->bLeakReportInProgress =       false;
     self->SampleRate =                  0;
     self->CoreDumpMask =                -1;
+    self->bUseGcore =                   false;
     self->PerfCounterTriggerCount =      0;
     for(int j = 0; j < MAX_PERF_COUNTER_TRIGGERS; j++)
     {
@@ -388,6 +389,7 @@ struct ProcDumpConfiguration * CopyProcDumpConfiguration(struct ProcDumpConfigur
         copy->bLeakReportInProgress = self->bLeakReportInProgress;
         copy->SampleRate = self->SampleRate;
         copy->CoreDumpMask = self->CoreDumpMask;
+        copy->bUseGcore = self->bUseGcore;
         copy->bMemoryTriggerBelowValue = self->bMemoryTriggerBelowValue;
         copy->MemoryThresholdCount = self->MemoryThresholdCount;
         copy->bMonitoringGCMemory = self->bMonitoringGCMemory;
@@ -931,6 +933,10 @@ int GetOptions(struct ProcDumpConfiguration *self, int argc, char *argv[])
                     0 == strcasecmp( argv[i], "-o" ))
         {
             self->bOverwriteExisting = true;
+        }
+        else if( 0 == strcasecmp( argv[i], "-usegcore" ))
+        {
+            self->bUseGcore = true;
         }
         else if( 0 == strcasecmp( argv[i], "/w" ) ||
                     0 == strcasecmp( argv[i], "-w" ))
