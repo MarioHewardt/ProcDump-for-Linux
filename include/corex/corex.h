@@ -15,7 +15,6 @@ extern "C" {
 
 /* Flags for corex_options_t.flags */
 #define COREX_FLAG_NONE                0
-#define COREX_FLAG_SKIP_SHARED         (1 << 0)  /* Skip shared library mappings */
 #define COREX_FLAG_IGNORE_COREDUMP_FILTER (1 << 1)  /* Dump all mappings, ignoring coredump_filter */
 
 /* Return codes */

@@ -22,6 +22,10 @@ typedef struct {
 typedef struct {
     pid_t       pid;
     pid_t       ppid;
+    pid_t       pgrp;           /* Process group ID */
+    pid_t       sid;            /* Session ID */
+    uid_t       uid;            /* Real UID */
+    gid_t       gid;            /* Real GID */
     int         num_threads;
     char        comm[16];       /* From /proc/[pid]/comm */
     char        exe[512];       /* From /proc/[pid]/exe symlink */

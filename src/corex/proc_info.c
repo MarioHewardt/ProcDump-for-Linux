@@ -116,10 +116,43 @@ static int read_status(pid_t pid, corex_proc_info_t *info)
     while (fgets(line, sizeof(line), f)) {
         if (strncmp(line, "PPid:", 5) == 0) {
             info->ppid = (pid_t)atoi(line + 5);
+        } else if (strncmp(line, "Uid:", 4) == 0) {
+            info->uid = (uid_t)strtoul(line + 4, NULL, 10);
+        } else if (strncmp(line, "Gid:", 4) == 0) {
+            info->gid = (gid_t)strtoul(line + 4, NULL, 10);
+        } else if (strncmp(line, "NSpgid:", 7) == 0) {
+            info->pgrp = (pid_t)atoi(line + 7);
+        } else if (strncmp(line, "NSsid:", 6) == 0) {
+            info->sid = (pid_t)atoi(line + 6);
         }
     }
 
     fclose(f);
+
+    /* Fallback: if NSpgid/NSsid were not present (kernel < 4.1),
+     * read pgrp (field 5) and session (field 6) from /proc/[pid]/stat. */
+    if (info->pgrp == 0 && info->sid == 0) {
+        char stat_path[64];
+        snprintf(stat_path, sizeof(stat_path), "/proc/%d/stat", (int)pid);
+        FILE *sf = fopen(stat_path, "r");
+        if (sf) {
+            char statbuf[1024];
+            if (fgets(statbuf, sizeof(statbuf), sf)) {
+                /* Fields after the comm "(name)" field */
+                char *p = strrchr(statbuf, ')');
+                if (p) {
+                    int pgrp_val = 0, sid_val = 0;
+                    /* After ')': state, ppid, pgrp, session */
+                    if (sscanf(p + 2, "%*c %*d %d %d", &pgrp_val, &sid_val) == 2) {
+                        info->pgrp = (pid_t)pgrp_val;
+                        info->sid = (pid_t)sid_val;
+                    }
+                }
+            }
+            fclose(sf);
+        }
+    }
+
     return 0;
 }
 

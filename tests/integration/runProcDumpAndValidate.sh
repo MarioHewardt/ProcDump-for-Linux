@@ -120,9 +120,16 @@ function runProcDumpAndValidate {
 						echo "[validate] SKIP: no gcore reference dump available for size comparison"
 					fi
 
-					# 2. GDB content validation (marker + shared libs)
+					# 2. GDB content validation (marker + shared libs + backtrace)
 					if [ -f "$GDBSCRIPT" ]; then
-						if ! validatedumpcontent "$corexDump" "$TESTPROGPATH" "$GDBSCRIPT"; then
+						# Determine expected function names based on test mode
+						# Only cpu mode keeps stress_cpu on the stack (infinite loop).
+						# mem/thread modes return from their functions before the dump.
+						local expected_funcs=()
+						case "$TESTPROGMODE" in
+							cpu*)    expected_funcs=("stress_cpu") ;;
+						esac
+						if ! validatedumpcontent "$corexDump" "$TESTPROGPATH" "$GDBSCRIPT" "${expected_funcs[@]}"; then
 							echo "[validate] FAIL: dump content validation failed"
 							exit 1
 						fi

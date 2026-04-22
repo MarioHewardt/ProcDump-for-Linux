@@ -201,6 +201,27 @@ function validatedumpcontent {
     return 1
   fi
 
+  # Check that backtrace contains 'main' (proves symbol resolution works)
+  if echo "$gdb_output" | sed -n '/BACKTRACE_START/,/BACKTRACE_END/p' | grep -q "main"; then
+    echo "[validate] PASS: backtrace contains main"
+  else
+    echo "[validate] FAIL: backtrace does not contain main"
+    echo "[validate] GDB output: $gdb_output"
+    return 1
+  fi
+
+  # If caller specified expected functions, check for each one
+  shift 3
+  for func in "$@"; do
+    if echo "$gdb_output" | sed -n '/BACKTRACE_START/,/BACKTRACE_END/p' | grep -q "$func"; then
+      echo "[validate] PASS: backtrace contains $func"
+    else
+      echo "[validate] FAIL: backtrace does not contain $func"
+      echo "[validate] GDB output: $gdb_output"
+      return 1
+    fi
+  done
+
   return 0
 }
 

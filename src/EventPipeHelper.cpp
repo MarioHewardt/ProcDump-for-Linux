@@ -138,23 +138,27 @@ static int read_nettrace_string(const uint8_t* data, size_t dataLen, size_t* off
 
     if (charCount <= 0)
     {
-        outBuf[0] = '\0';
+        if (outBufSize > 0) outBuf[0] = '\0';
         return 0;
     }
+
+    // Guard against overflow on 32-bit: cap charCount to half the max buffer
+    if ((uint32_t)charCount > dataLen / 2)
+        return -1;
 
     size_t byteCount = (size_t)charCount * 2;
     if (*offset + byteCount > dataLen) return -1;
 
     // Convert UTF-16LE to ASCII (sufficient for counter/provider names)
     size_t j = 0;
-    for (int32_t i = 0; i < charCount && j < outBufSize - 1; i++)
+    for (int32_t i = 0; i < charCount && outBufSize > 1 && j < outBufSize - 1; i++)
     {
         uint16_t wc;
         memcpy(&wc, data + *offset + i * 2, 2);
         if (wc == 0) break; // null terminator
         outBuf[j++] = (wc < 128) ? (char)wc : '?';
     }
-    outBuf[j] = '\0';
+    if (outBufSize > 0) outBuf[j] = '\0';
     *offset += byteCount;
     return 0;
 }
@@ -165,17 +169,22 @@ static int read_nettrace_string(const uint8_t* data, size_t dataLen, size_t* off
 static int read_null_terminated_utf16(const uint8_t* data, size_t dataLen, size_t* offset, char* outBuf, size_t outBufSize)
 {
     size_t j = 0;
+    bool terminated = false;
     while (*offset + 2 <= dataLen)
     {
         uint16_t wc;
         memcpy(&wc, data + *offset, 2);
         *offset += 2;
-        if (wc == 0) break;
-        if (j < outBufSize - 1)
+        if (wc == 0)
+        {
+            terminated = true;
+            break;
+        }
+        if (outBufSize > 1 && j < outBufSize - 1)
             outBuf[j++] = (wc < 128) ? (char)wc : '?';
     }
-    outBuf[j] = '\0';
-    return 0;
+    if (outBufSize > 0) outBuf[j] = '\0';
+    return terminated ? 0 : -1;
 }
 
 //--------------------------------------------------------------------
@@ -747,9 +756,9 @@ static void metadata_event_callback(uint32_t metadataId, const uint8_t* payload,
 
     // Metadata payload format (V4/V5):
     //   int32 MetaDataId (the ID being defined)
-    //   string ProviderName (int32 charCount + UTF16LE)
+    //   NullTerminatedUTF16 ProviderName
     //   int32 EventId
-    //   string EventName (int32 charCount + UTF16LE)
+    //   NullTerminatedUTF16 EventName
     //   ... (keywords, version, level, params — we skip)
 
     size_t pos = 0;
@@ -775,7 +784,9 @@ static void metadata_event_callback(uint32_t metadataId, const uint8_t* payload,
         struct MetadataEntry* entry = &state->metadata[state->metadataCount];
         entry->metadataId = definedMetaId;
         strncpy(entry->providerName, providerName, sizeof(entry->providerName) - 1);
+        entry->providerName[sizeof(entry->providerName) - 1] = '\0';
         strncpy(entry->eventName, eventName, sizeof(entry->eventName) - 1);
+        entry->eventName[sizeof(entry->eventName) - 1] = '\0';
         state->metadataCount++;
         Trace("metadata_event_callback: registered metaId=%d provider='%s' event='%s'",
               definedMetaId, providerName, eventName);
@@ -1014,6 +1025,26 @@ static int build_collect_tracing2_command(
     return 0;
 }
 
+static void set_session_fd(int* sessionFd, pthread_mutex_t* sessionFdMutex, int value)
+{
+    if (!sessionFd)
+    {
+        return;
+    }
+
+    if (sessionFdMutex)
+    {
+        pthread_mutex_lock(sessionFdMutex);
+    }
+
+    *sessionFd = value;
+
+    if (sessionFdMutex)
+    {
+        pthread_mutex_unlock(sessionFdMutex);
+    }
+}
+
 //--------------------------------------------------------------------
 //
 // StartEventPipeCounterSession
@@ -1027,12 +1058,13 @@ int StartEventPipeCounterSession(
     EventPipeCounterCallback callback,
     void* context,
     uint64_t* sessionId,
-    int* sessionFd)
+    int* sessionFd,
+    pthread_mutex_t* sessionFdMutex)
 {
     int fd = -1;
     struct sockaddr_un addr = {0};
 
-    if (sessionFd) *sessionFd = -1;
+    set_session_fd(sessionFd, sessionFdMutex, -1);
     uint8_t* cmdBuffer = NULL;
     size_t cmdSize = 0;
 
@@ -1140,7 +1172,7 @@ int StartEventPipeCounterSession(
     {
         Trace("StartEventPipeCounterSession: Failed to connect [%d]", errno);
         Log(error, "Failed to connect to .NET diagnostics socket at %s [%d].", socketName, errno);
-        if (sessionFd) *sessionFd = -1;
+        set_session_fd(sessionFd, sessionFdMutex, -1);
         close(fd);
         free(providerConfigs);
         return -1;
@@ -1150,7 +1182,7 @@ int StartEventPipeCounterSession(
     if (build_collect_tracing2_command(providerConfigs, totalProviderCount, &cmdBuffer, &cmdSize) != 0)
     {
         Trace("StartEventPipeCounterSession: Failed to build command");
-        if (sessionFd) *sessionFd = -1;
+        set_session_fd(sessionFd, sessionFdMutex, -1);
         close(fd);
         free(providerConfigs);
         return -1;
@@ -1162,7 +1194,7 @@ int StartEventPipeCounterSession(
     {
         Trace("StartEventPipeCounterSession: Failed to send command [%d]", errno);
         free(cmdBuffer);
-        if (sessionFd) *sessionFd = -1;
+        set_session_fd(sessionFd, sessionFdMutex, -1);
         close(fd);
         return -1;
     }
@@ -1173,7 +1205,7 @@ int StartEventPipeCounterSession(
     if (recv_all(fd, &responseHeader, sizeof(responseHeader)) != 0)
     {
         Trace("StartEventPipeCounterSession: Failed to read response header [%d]", errno);
-        if (sessionFd) *sessionFd = -1;
+        set_session_fd(sessionFd, sessionFdMutex, -1);
         close(fd);
         return -1;
     }
@@ -1183,7 +1215,7 @@ int StartEventPipeCounterSession(
     {
         Trace("StartEventPipeCounterSession: Server returned error (set=0x%02x, id=0x%02x)", responseHeader.CommandSet, responseHeader.CommandId);
         Log(error, "Failed to start EventPipe session. The target process may not support performance counter monitoring.");
-        if (sessionFd) *sessionFd = -1;
+        set_session_fd(sessionFd, sessionFdMutex, -1);
         close(fd);
         return -1;
     }
@@ -1198,20 +1230,28 @@ int StartEventPipeCounterSession(
             if (recv_all(fd, &sid, 8) != 0)
             {
                 Trace("StartEventPipeCounterSession: Failed to read session ID");
-                if (sessionFd) *sessionFd = -1;
+                set_session_fd(sessionFd, sessionFdMutex, -1);
                 close(fd);
                 return -1;
             }
-            // Skip remaining payload
-            if (payloadSize > 8)
+            payloadSize -= 8;
+        }
+
+        // Always consume remaining payload bytes to keep stream aligned.
+        if (payloadSize > 0)
+        {
+            if (skip_bytes(fd, payloadSize) != 0)
             {
-                skip_bytes(fd, payloadSize - 8);
+                Trace("StartEventPipeCounterSession: Failed to skip response payload");
+                set_session_fd(sessionFd, sessionFdMutex, -1);
+                close(fd);
+                return -1;
             }
         }
     }
 
     *sessionId = sid;
-    if (sessionFd) *sessionFd = fd;
+    set_session_fd(sessionFd, sessionFdMutex, fd);
     Trace("StartEventPipeCounterSession: Session started (id=%lu)", (unsigned long)sid);
 
     // Now read the nettrace stream
@@ -1227,7 +1267,7 @@ int StartEventPipeCounterSession(
     if (read_exact(fd, magicBuf, 8) != 0)
     {
         Trace("StartEventPipeCounterSession: Failed to read nettrace magic");
-        if (sessionFd) *sessionFd = -1;
+        set_session_fd(sessionFd, sessionFdMutex, -1);
         close(fd);
         return -1;
     }
@@ -1235,7 +1275,7 @@ int StartEventPipeCounterSession(
     if (memcmp(magicBuf, NETTRACE_MAGIC, 8) != 0)
     {
         Trace("StartEventPipeCounterSession: Invalid nettrace magic");
-        if (sessionFd) *sessionFd = -1;
+        set_session_fd(sessionFd, sessionFdMutex, -1);
         close(fd);
         return -1;
     }
@@ -1245,7 +1285,7 @@ int StartEventPipeCounterSession(
     if (read_serialized_string(fd, serHeader, sizeof(serHeader)) != 0)
     {
         Trace("StartEventPipeCounterSession: Failed to read serialization header");
-        if (sessionFd) *sessionFd = -1;
+        set_session_fd(sessionFd, sessionFdMutex, -1);
         close(fd);
         return -1;
     }
@@ -1358,17 +1398,23 @@ int StartEventPipeCounterSession(
 
             Trace("StartEventPipeCounterSession: block '%s' blockSize=%d alignPad=%zu", typeName, blockSize, alignPad);
 
+            int blockRc = 0;
             if (strcmp(typeName, METADATA_BLOCK_TAG) == 0)
             {
-                if (blockSize > 0) parse_metadata_block(fd, blockSize, &state);
+                if (blockSize > 0) blockRc = parse_metadata_block(fd, blockSize, &state);
             }
             else if (strcmp(typeName, EVENT_BLOCK_TAG) == 0)
             {
-                if (blockSize > 0) parse_event_block(fd, blockSize, &state);
+                if (blockSize > 0) blockRc = parse_event_block(fd, blockSize, &state);
             }
             else
             {
-                if (blockSize > 0) skip_bytes(fd, blockSize);
+                if (blockSize > 0) blockRc = skip_bytes(fd, blockSize);
+            }
+            if (blockRc != 0)
+            {
+                Trace("StartEventPipeCounterSession: block parse failed for '%s'", typeName);
+                break;
             }
             // Advance stream position by blockSize (the parse/skip functions read exactly blockSize bytes)
             streamPos += blockSize;
@@ -1380,7 +1426,7 @@ int StartEventPipeCounterSession(
         Trace("StartEventPipeCounterSession: endTag=%d", endTag);
     }
 
-    if (sessionFd) *sessionFd = -1;
+    set_session_fd(sessionFd, sessionFdMutex, -1);
     close(fd);
     Trace("StartEventPipeCounterSession: Exit");
     return 0;

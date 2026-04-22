@@ -2195,6 +2195,8 @@ struct PerfCounterCallbackContext
     uint64_t sessionId;
     char* socketName;
     int sessionFd;
+    bool sessionFinished;
+    pthread_mutex_t sessionFdMutex;
 };
 
 //--------------------------------------------------------------------
@@ -2213,10 +2215,35 @@ static void* PerfCounterQuitWatcher(void* arg)
         // keep waiting
     }
 
-    // Quit signaled — shutdown the EventPipe fd to unblock read_exact
-    if (context->sessionFd >= 0)
+    // Quit signaled: wait until the session fd is published or the session exits.
+    while (true)
     {
-        shutdown(context->sessionFd, SHUT_RDWR);
+        int sessionFd = -1;
+        bool sessionFinished = false;
+
+        pthread_mutex_lock(&context->sessionFdMutex);
+        sessionFd = context->sessionFd;
+        sessionFinished = context->sessionFinished;
+        pthread_mutex_unlock(&context->sessionFdMutex);
+
+        if (sessionFd >= 0)
+        {
+            // dup() so we don't race with the parser thread closing the original fd
+            int dupFd = dup(sessionFd);
+            if (dupFd >= 0)
+            {
+                shutdown(dupFd, SHUT_RDWR);
+                close(dupFd);
+            }
+            break;
+        }
+
+        if (sessionFinished)
+        {
+            break;
+        }
+
+        usleep(10 * 1000);
     }
 
     return NULL;
@@ -2318,6 +2345,7 @@ static bool PerfCounterCallback(struct EventPipeCounterValue* counterValue, void
                     SetQuit(config, 1);
                     return false;
                 }
+                free(dumpFileName);
 
                 // Cooldown
                 if (WaitForQuit(config, config->ThresholdSeconds * 1000) != WAIT_TIMEOUT)
@@ -2393,12 +2421,17 @@ void *PerfCounterMonitoringThread(void *thread_args /* struct ProcDumpConfigurat
         context.sessionId = 0;
         context.socketName = socketName;
         context.sessionFd = -1;
+        context.sessionFinished = false;
+        pthread_mutex_init(&context.sessionFdMutex, NULL);
 
         // Start a watcher thread that will shutdown the EventPipe fd on quit
         pthread_t quitWatcher = -1;
         if (pthread_create(&quitWatcher, NULL, PerfCounterQuitWatcher, &context) != 0)
         {
-            Trace("PerfCounterMonitoringThread: failed to create PerfCounterQuitWatcher thread.");
+            Log(error, "Failed to create PerfCounterQuitWatcher thread. Shutdown may hang.");
+            SetQuit(config, 1);
+            pthread_mutex_destroy(&context.sessionFdMutex);
+            return NULL;
         }
 
         Log(info, "Starting performance counter monitoring for %d counter(s) on process %d...",
@@ -2413,7 +2446,12 @@ void *PerfCounterMonitoringThread(void *thread_args /* struct ProcDumpConfigurat
             PerfCounterCallback,
             &context,
             &context.sessionId,
-            &context.sessionFd);
+            &context.sessionFd,
+            &context.sessionFdMutex);
+
+        pthread_mutex_lock(&context.sessionFdMutex);
+        context.sessionFinished = true;
+        pthread_mutex_unlock(&context.sessionFdMutex);
 
         // Wait for the quit watcher to finish
         if (quitWatcher != (pthread_t)-1)
@@ -2427,6 +2465,8 @@ void *PerfCounterMonitoringThread(void *thread_args /* struct ProcDumpConfigurat
             Log(error, "Failed to start EventPipe counter session.");
             SetQuit(config, 1);
         }
+
+        pthread_mutex_destroy(&context.sessionFdMutex);
     }
 #endif
     Trace("PerfCounterMonitoringThread: Exit [id=%d]", gettid());

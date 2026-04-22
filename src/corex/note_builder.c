@@ -139,10 +139,10 @@ static int build_prpsinfo_note(corex_note_buf_t *buf,
     psinfo.pr_nice = 0;
     psinfo.pr_pid = proc->pid;
     psinfo.pr_ppid = proc->ppid;
-    psinfo.pr_pgrp = proc->pid;
-    psinfo.pr_sid = proc->pid;
-    psinfo.pr_uid = 0;
-    psinfo.pr_gid = 0;
+    psinfo.pr_pgrp = proc->pgrp;
+    psinfo.pr_sid = proc->sid;
+    psinfo.pr_uid = proc->uid;
+    psinfo.pr_gid = proc->gid;
 
     strncpy(psinfo.pr_fname, proc->comm, sizeof(psinfo.pr_fname) - 1);
 

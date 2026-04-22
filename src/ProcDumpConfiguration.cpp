@@ -432,7 +432,7 @@ struct ProcDumpConfiguration * CopyProcDumpConfiguration(struct ProcDumpConfigur
         copy->ExcludeFilter = self->ExcludeFilter == NULL ? NULL : strdup(self->ExcludeFilter);
         copy->socketPath = self->socketPath == NULL ? NULL : strdup(self->socketPath);
         copy->bDumpOnException = self->bDumpOnException;
-        copy->statusSocket = self->statusSocket;
+        copy->statusSocket = -1;
 
         // Copy perf counter triggers
         copy->PerfCounterTriggerCount = self->PerfCounterTriggerCount;

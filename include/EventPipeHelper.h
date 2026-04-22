@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 // Forward declaration
 struct ProcDumpConfiguration;
@@ -58,7 +59,8 @@ int StartEventPipeCounterSession(
     EventPipeCounterCallback callback,
     void* context,
     uint64_t* sessionId,
-    int* sessionFd);
+    int* sessionFd,
+    pthread_mutex_t* sessionFdMutex);
 
 //
 // Stop an EventPipe session. Must be called from a different thread
